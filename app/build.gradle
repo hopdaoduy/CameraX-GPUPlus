@@ -42,5 +42,6 @@ dependencies {
     implementation "androidx.camera:camera-view:1.0.0-alpha29"
     implementation project(path: ':pusher')
     implementation project(path: ':camerax_capture')
+    implementation 'jp.co.cyberagent.android.gpuimage:gpuimage-library:1.3.0'
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.7'
 }

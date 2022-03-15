@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -19,6 +21,9 @@ import com.zmy.rtmp_pusher.lib.RtmpPusher
 import com.zmy.rtmp_pusher.lib.audio_capture.MicAudioCapture
 import com.zmy.rtmp_pusher.lib.log.RtmpLogManager
 import com.zmy.rtmp_pusher.lib.video_capture.VideoCapture
+import jp.co.cyberagent.android.gpuimage.GPUImageView
+import org.wysaid.myUtils.ImageUtil
+import org.wysaid.nativePort.CGEFrameRecorder
 
 @RequiresApi(Build.VERSION_CODES.M)
 class MainActivity : AppCompatActivity(), RtmpCallback {
@@ -26,13 +31,16 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
         private const val TAG = "MainActivity"
     }
 
+    private val mFrameRecorder : CGEFrameRecorder = CGEFrameRecorder()
     private val previewView by lazy { findViewById<PreviewView>(R.id.preview_view) }
+    private val gpuImageView by lazy { findViewById<GPUImageView>(R.id.gpuImageView) }
+    private val btnRecording by lazy { findViewById<Button>(R.id.btn_recording) }
     private val audioCapture: MicAudioCapture by lazy {
         MicAudioCapture(AudioFormat.ENCODING_PCM_16BIT, 44100, AudioFormat.CHANNEL_IN_STEREO)
     }
 
     private val videoCapture: VideoCapture by lazy {
-        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA, Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) })
+        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA, Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) },gpuImageView)
     }
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) {
@@ -51,7 +59,7 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
 
     private val rtmpPusher by lazy {
         RtmpPusher.Builder()
-            .url("rtmp://192.168.50.125:19350/live/livestream")
+            .url("rtmp://live-rtmp.sohatv.vn/ywdacow15xwowa0p7jpdg0w470lws2zr/e405fcf9-4824-4b11-9f87-1b74756d096a")
             .audioCapture(audioCapture)
             .videoCapture(videoCapture)
             .cacheSize(100)
@@ -63,6 +71,23 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         cameraPermission.launch(Manifest.permission.CAMERA)
+        btnRecording.setOnClickListener(View.OnClickListener {
+            recording()
+        })
+    }
+
+    private fun recording(){
+        if (btnRecording.text.equals("Recording")){
+            btnRecording.text = "Stop"
+            val recordFilename = ImageUtil.getPath() + "/rec_" + System.currentTimeMillis() + ".mp4"
+            mFrameRecorder.startRecording(30,recordFilename)
+        } else{
+            btnRecording.text = "Recording"
+
+            mFrameRecorder.endRecording(true)
+
+        }
+
     }
 
     override fun onDestroy() {

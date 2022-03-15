@@ -4,6 +4,8 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.WindowManager;
@@ -11,6 +13,8 @@ import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceRequest;
 import androidx.camera.core.UseCase;
@@ -25,6 +29,20 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.zmy.rtmp_pusher.lib.encoder.EOFHandle;
 import com.zmy.rtmp_pusher.lib.log.RtmpLogManager;
 import com.zmy.rtmp_pusher.lib.video_capture.VideoCapture;
+
+import jp.co.cyberagent.android.gpuimage.GPUImage;
+import jp.co.cyberagent.android.gpuimage.GPUImage3x3ConvolutionFilter;
+import jp.co.cyberagent.android.gpuimage.GPUImageColorInvertFilter;
+import jp.co.cyberagent.android.gpuimage.GPUImageFilter;
+import jp.co.cyberagent.android.gpuimage.GPUImageNativeLibrary;
+import jp.co.cyberagent.android.gpuimage.GPUImageSketchFilter;
+import jp.co.cyberagent.android.gpuimage.GPUImageView;
+import jp.co.cyberagent.android.gpuimage.GPUImageGammaFilter;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 
 @SuppressLint("RestrictedApi")
 public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvider, Consumer<SurfaceRequest.Result>, Observable.Observer<CameraInternal.State> {
@@ -42,7 +60,13 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private SurfaceRequest request;
     private EOFHandle eofHandle;
 
-    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, Preview preview) {
+    private GPUImageView gpuImageView;
+    private ImageAnalysis imageAnalysis;
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private Bitmap bitmap;
+
+
+    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, Preview preview , GPUImageView gpuImageView) {
         super();
         this.context = context;
         this.lifecycleOwner = lifecycleOwner;
@@ -50,9 +74,44 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         this.preview = preview;
         this.width = width;
         this.height = height;
+        this.gpuImageView = gpuImageView;
+
+        imageAnalysis = new ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
+        imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
+            @Override
+            public void analyze(@NonNull ImageProxy image) {
+                Bitmap bitmap = allocateBitmapIfNecessary(image.getWidth(), image.getHeight());
+                Log.d("HopLog", bitmap.toString());
+
+
+                byte[] bytes = new byte[image.getPlanes()[0].getBuffer().remaining()];
+                image.getPlanes()[0].getBuffer().get(bytes);
+
+
+
+
+            }
+        });
         cameraProviderFuture = ProcessCameraProvider.getInstance(context);
+/*        cameraProviderFuture.addListener(new Runnable() {
+            @Override
+            public void run() {
+
+            }
+        }, ContextCompat.getMainExecutor(context));*/
     }
 
+    private void setFilter(GPUImageFilter filter){
+        gpuImageView.setFilter(filter);
+    }
+
+
+    private Bitmap allocateBitmapIfNecessary(int width, int height){
+        if (bitmap == null || bitmap.getWidth() != width || bitmap.getHeight() != height) {
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        }
+        return bitmap;
+    }
 
     @Override
     public void doInitialize() {
