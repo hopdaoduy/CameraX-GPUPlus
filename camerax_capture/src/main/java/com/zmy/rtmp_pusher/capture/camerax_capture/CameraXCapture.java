@@ -5,13 +5,16 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.SurfaceTexture;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
+import android.view.TextureView;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -30,6 +33,9 @@ import com.zmy.rtmp_pusher.lib.encoder.EOFHandle;
 import com.zmy.rtmp_pusher.lib.log.RtmpLogManager;
 import com.zmy.rtmp_pusher.lib.video_capture.VideoCapture;
 
+import org.wysaid.common.Common;
+import org.wysaid.nativePort.CGEFrameRecorder;
+
 import jp.co.cyberagent.android.gpuimage.GPUImage;
 import jp.co.cyberagent.android.gpuimage.GPUImage3x3ConvolutionFilter;
 import jp.co.cyberagent.android.gpuimage.GPUImageColorInvertFilter;
@@ -39,6 +45,7 @@ import jp.co.cyberagent.android.gpuimage.GPUImageSketchFilter;
 import jp.co.cyberagent.android.gpuimage.GPUImageView;
 import jp.co.cyberagent.android.gpuimage.GPUImageGammaFilter;
 
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -49,56 +56,58 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private final Context context;
     private final int width;
     private final int height;
+    protected int mTextureID;
     private int outputWidth;
     private int outputHeight;
     private int rotationDegree = 0;
+    protected float[] mTransformMatrix = new float[16];
+    private CGEFrameRecorder cgeFrameRecorder = new CGEFrameRecorder() ;
+
     private final CameraSelector cameraSelector;
-    private final Preview preview;
+    private Ilistener listener;
+    private final TextureView textureView;
     private final LifecycleOwner lifecycleOwner;
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
     private Preview encodeCase;
     private SurfaceRequest request;
     private EOFHandle eofHandle;
+    private SurfaceTexture surfaceTexture, surfaceTextureRender;
 
     private GPUImageView gpuImageView;
     private ImageAnalysis imageAnalysis;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
+    private Camera camera;
+    private Surface surfaceRender;
+    private ProcessCameraProvider cameraProvider;
 
 
-    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, Preview preview , GPUImageView gpuImageView) {
+    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, TextureView textureView , GPUImageView gpuImageView, Ilistener listener) {
         super();
         this.context = context;
         this.lifecycleOwner = lifecycleOwner;
         this.cameraSelector = cameraSelector;
-        this.preview = preview;
+        this.textureView = textureView;
         this.width = width;
         this.height = height;
         this.gpuImageView = gpuImageView;
+        this.listener = listener;
 
-        imageAnalysis = new ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
-        imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
-            @Override
-            public void analyze(@NonNull ImageProxy image) {
-                Bitmap bitmap = allocateBitmapIfNecessary(image.getWidth(), image.getHeight());
-                Log.d("HopLog", bitmap.toString());
+        mTextureID = Common.genSurfaceTextureID();
+        surfaceTextureRender = new SurfaceTexture(mTextureID);
+        this.textureView.setSurfaceTexture(surfaceTextureRender);
 
 
-                byte[] bytes = new byte[image.getPlanes()[0].getBuffer().remaining()];
-                image.getPlanes()[0].getBuffer().get(bytes);
+       cameraProviderFuture = ProcessCameraProvider.getInstance(context);
+       cameraProviderFuture.addListener(new Runnable() {
+           @Override
+           public void run() {
 
+           }
+       },ContextCompat.getMainExecutor(context));
 
-
-
-            }
-        });
-        cameraProviderFuture = ProcessCameraProvider.getInstance(context);
-/*        cameraProviderFuture.addListener(new Runnable() {
-            @Override
-            public void run() {
-
-            }
-        }, ContextCompat.getMainExecutor(context));*/
+        //itit CEG
+        
     }
 
     private void setFilter(GPUImageFilter filter){
@@ -113,15 +122,50 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         return bitmap;
     }
 
+    public void setFilterWidthConfig(String config){
+        cgeFrameRecorder.setFilterWidthConfig(config);
+    }
+
     @Override
     public void doInitialize() {
         try {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED) {
                 throw new SecurityException("Permission denied");
             }
-            ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+
+            //set up ImageAnalytics
+
+            imageAnalysis = new ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetResolution(new Size(1080,1920))
+                    .build();
+            imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
+                @Override
+                public void analyze(@NonNull ImageProxy image) {
+
+                    // set draw frame
+                Bitmap bitmap = allocateBitmapIfNecessary(image.getWidth(), image.getHeight());
+                Log.d("HopLog", bitmap.toString());
+
+                listener.sendBitmap(bitmap);
+
+
+
+            /*    byte[] bytes = new byte[image.getPlanes()[0].getBuffer().remaining()];
+                image.getPlanes()[0].getBuffer().get(bytes)*/;
+
+                }
+            });
+
+            cameraProvider = cameraProviderFuture.get();
+            Preview preview = new Preview.Builder().build();
+            preview.setSurfaceProvider(this);
+
             cameraProvider.unbindAll();
-            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, getEncodeCase(), preview);
+            camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, imageAnalysis );
+
+            surfaceTexture = textureView.getSurfaceTexture();
+
         } catch (Exception e) {
             if (callback != null) callback.onVideoCaptureInit(this, e);
         }
@@ -226,4 +270,16 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         return useCase;
     }
 
+
+    public void startRecording(int i, String recordFilename) {
+        cgeFrameRecorder.startRecording(i,recordFilename);
+    }
+
+    public void endRecording(boolean b) {
+        cgeFrameRecorder.endRecording(b);
+    }
+
+    public interface Ilistener{
+        void sendBitmap(Bitmap bitmap);
+    }
 }

@@ -15,6 +15,8 @@ import java.io.FileOutputStream;
  */
 public class FileUtil {
 
+
+
     public static final String LOG_TAG = Common.LOG_TAG;
     public static final File externalStorageDirectory = Environment.getExternalStorageDirectory();
     public static String packageFilesDirectory = null;

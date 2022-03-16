@@ -5,8 +5,10 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.os.Build
 import android.os.Bundle
+import android.view.TextureView
 import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -22,6 +24,7 @@ import com.zmy.rtmp_pusher.lib.audio_capture.MicAudioCapture
 import com.zmy.rtmp_pusher.lib.log.RtmpLogManager
 import com.zmy.rtmp_pusher.lib.video_capture.VideoCapture
 import jp.co.cyberagent.android.gpuimage.GPUImageView
+import org.wysaid.myUtils.FileUtil
 import org.wysaid.myUtils.ImageUtil
 import org.wysaid.nativePort.CGEFrameRecorder
 
@@ -30,17 +33,20 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
     companion object {
         private const val TAG = "MainActivity"
     }
+    private val lastVideoPathFileName = FileUtil.getPath() + "/lastVideoPath.txt";
 
     private val mFrameRecorder : CGEFrameRecorder = CGEFrameRecorder()
     private val previewView by lazy { findViewById<PreviewView>(R.id.preview_view) }
     private val gpuImageView by lazy { findViewById<GPUImageView>(R.id.gpuImageView) }
     private val btnRecording by lazy { findViewById<Button>(R.id.btn_recording) }
+    private val frameFilterMenu by lazy { findViewById<LinearLayout>(R.id.layout_menu_filter)}
     private val audioCapture: MicAudioCapture by lazy {
         MicAudioCapture(AudioFormat.ENCODING_PCM_16BIT, 44100, AudioFormat.CHANNEL_IN_STEREO)
     }
 
     private val videoCapture: VideoCapture by lazy {
-        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA, Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) },gpuImageView)
+      /*  CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA, Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) },gpuImageView)*/
+        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA,null ,gpuImageView , null)
     }
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) {
@@ -74,6 +80,21 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
         btnRecording.setOnClickListener(View.OnClickListener {
             recording()
         })
+
+        setupFilter()
+    }
+
+    private fun setupFilter(){
+/*        for (int i = 0; i != MainActivity.EFFECT_CONFIGS.length; ++i) {
+            MyButtons button = new MyButtons(this, MainActivity.EFFECT_CONFIGS[i]);
+            button.setAllCaps(false);
+            if (i == 0)
+                button.setText("None");
+            else
+                button.setText("Filter" + i);
+            button.setOnClickListener(mFilterSwitchListener);
+            layout.addView(button);
+        }*/
     }
 
     private fun recording(){
@@ -81,6 +102,7 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
             btnRecording.text = "Stop"
             val recordFilename = ImageUtil.getPath() + "/rec_" + System.currentTimeMillis() + ".mp4"
             mFrameRecorder.startRecording(30,recordFilename)
+            FileUtil.saveTextContent(recordFilename, lastVideoPathFileName)
         } else{
             btnRecording.text = "Recording"
 
