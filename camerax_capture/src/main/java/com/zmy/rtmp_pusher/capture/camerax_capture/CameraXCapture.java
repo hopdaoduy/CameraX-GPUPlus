@@ -5,7 +5,12 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
+import android.opengl.GLSurfaceView;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
@@ -23,6 +28,7 @@ import androidx.camera.core.SurfaceRequest;
 import androidx.camera.core.UseCase;
 import androidx.camera.core.impl.CameraInternal;
 import androidx.camera.core.impl.Observable;
+import androidx.camera.core.internal.utils.ImageUtil;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 import androidx.core.util.Consumer;
@@ -45,6 +51,8 @@ import jp.co.cyberagent.android.gpuimage.GPUImageSketchFilter;
 import jp.co.cyberagent.android.gpuimage.GPUImageView;
 import jp.co.cyberagent.android.gpuimage.GPUImageGammaFilter;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -53,6 +61,7 @@ import java.util.concurrent.Executors;
 
 @SuppressLint("RestrictedApi")
 public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvider, Consumer<SurfaceRequest.Result>, Observable.Observer<CameraInternal.State> {
+    private static final String TAG = CameraXCapture.class.getSimpleName();
     private final Context context;
     private final int width;
     private final int height;
@@ -61,7 +70,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private int outputHeight;
     private int rotationDegree = 0;
     protected float[] mTransformMatrix = new float[16];
-    private CGEFrameRecorder cgeFrameRecorder = new CGEFrameRecorder() ;
+    private CGEFrameRecorder cgeFrameRecorder;
 
     private final CameraSelector cameraSelector;
     private Ilistener listener;
@@ -72,7 +81,6 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private SurfaceRequest request;
     private EOFHandle eofHandle;
     private SurfaceTexture surfaceTexture, surfaceTextureRender;
-
     private GPUImageView gpuImageView;
     private ImageAnalysis imageAnalysis;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -93,13 +101,10 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         this.gpuImageView = gpuImageView;
         this.listener = listener;
 
-        mTextureID = Common.genSurfaceTextureID();
-        surfaceTextureRender = new SurfaceTexture(mTextureID);
-        this.textureView.setSurfaceTexture(surfaceTextureRender);
 
-
-       cameraProviderFuture = ProcessCameraProvider.getInstance(context);
-       cameraProviderFuture.addListener(new Runnable() {
+        cgeFrameRecorder = new CGEFrameRecorder();
+        cameraProviderFuture = ProcessCameraProvider.getInstance(context);
+        cameraProviderFuture.addListener(new Runnable() {
            @Override
            public void run() {
 
@@ -107,7 +112,13 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
        },ContextCompat.getMainExecutor(context));
 
         //itit CEG
-        
+        mTextureID = Common.genSurfaceTextureID();
+        surfaceTextureRender = new SurfaceTexture(mTextureID);
+        textureView.setSurfaceTexture(surfaceTextureRender);
+        cgeFrameRecorder.init(1080, 1920, 1080, 1920);
+        cgeFrameRecorder.setSrcRotation((float) (Math.PI / 2.0));
+        cgeFrameRecorder.setSrcFlipScale(1.0f, -1.0f);
+        cgeFrameRecorder.setRenderFlipScale(1.0f, -1.0f);
     }
 
     private void setFilter(GPUImageFilter filter){
@@ -142,29 +153,34 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
             imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
                 @Override
                 public void analyze(@NonNull ImageProxy image) {
-
-                    // set draw frame
-                Bitmap bitmap = allocateBitmapIfNecessary(image.getWidth(), image.getHeight());
-                Log.d("HopLog", bitmap.toString());
-
-                listener.sendBitmap(bitmap);
+                    Log.d("HopLog", image.toString());
+                    try {
+                        byte[] data = ImageUtil.imageToJpegByteArray(image);
 
 
+                        cgeFrameRecorder.update(mTextureID, mTransformMatrix);
+                        cgeFrameRecorder.runProc();
+                        cgeFrameRecorder.render(1080,1920,1080,1920);
 
-            /*    byte[] bytes = new byte[image.getPlanes()[0].getBuffer().remaining()];
-                image.getPlanes()[0].getBuffer().get(bytes)*/;
+                        //
+                    } catch (ImageUtil.CodecFailedException e) {
+                        e.printStackTrace();
+                    }
+
+                    image.close();
+
 
                 }
             });
 
             cameraProvider = cameraProviderFuture.get();
             Preview preview = new Preview.Builder().build();
-            preview.setSurfaceProvider(this);
+            preview.setSurfaceProvider(executor,this::onSurfaceRequested);
+
+            SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
 
             cameraProvider.unbindAll();
-            camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, imageAnalysis );
-
-            surfaceTexture = textureView.getSurfaceTexture();
+            camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis );
 
         } catch (Exception e) {
             if (callback != null) callback.onVideoCaptureInit(this, e);
@@ -204,7 +220,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
 
     private Size getRotatedResolution(int width, int height) {
         if (getDeviceOrientation() == 0 || getDeviceOrientation() == 180) {
-            return new Size(height, width);
+            return new Size(width, width);
         } else {
             return new Size(width, height);
         }
@@ -222,7 +238,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
 
     @Override
     public void start(Surface surface, EOFHandle handle) {
-        request.provideSurface(surface, ContextCompat.getMainExecutor(context), this);
+        request.provideSurface(new Surface(surfaceTextureRender), ContextCompat.getMainExecutor(context), this);
         this.eofHandle = handle;
     }
 
@@ -269,7 +285,6 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         useCase.setSurfaceProvider(provider);
         return useCase;
     }
-
 
     public void startRecording(int i, String recordFilename) {
         cgeFrameRecorder.startRecording(i,recordFilename);
