@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.media.AudioFormat;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.TextureView;
 import android.view.View;
@@ -28,6 +29,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.zmy.rtmp_pusher.capture.camerax_capture.CameraXCapture;
+import com.zmy.rtmp_pusher.capture.camerax_capture.GLCameraView;
 import com.zmy.rtmp_pusher.lib.RtmpCallback;
 import com.zmy.rtmp_pusher.lib.RtmpPusher;
 import com.zmy.rtmp_pusher.lib.audio_capture.MicAudioCapture;
@@ -49,7 +51,7 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
 
     private ImageView imageView;
     private String lastVideoPathFileName = FileUtil.getPath() + "/lastVideoPath.txt";
-    private TextureView textureView;
+    private GLCameraView glCameraView;
     private GPUImageView gpuImageView;
     private Button btnRecording;
     private LinearLayout linearLayout;
@@ -103,7 +105,7 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
         if (!isPermissionGranted()){
             requestPermission();
         } else {
-            videoCapture = new CameraXCapture(this.getApplicationContext(), this , 1920 ,1080, CameraSelector.DEFAULT_FRONT_CAMERA, textureView , gpuImageView,this);
+            videoCapture = new CameraXCapture(this.getApplicationContext(), this , 1920 ,1080, CameraSelector.DEFAULT_FRONT_CAMERA, null , gpuImageView,this, glCameraView);
             audioCapture = new MicAudioCapture(AudioFormat.ENCODING_PCM_16BIT, 44100, AudioFormat.CHANNEL_IN_STEREO);
 
 
@@ -144,7 +146,7 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
 
     private void initView(){
         imageView = findViewById(R.id.preview_image);
-        textureView = findViewById(R.id.preview_view);
+        glCameraView = findViewById(R.id.glCameraView);
         linearLayout = findViewById(R.id.layout_menu_filter);
         btnRecording = findViewById(R.id.btn_recording);
         gpuImageView = findViewById(R.id.gpuImageView);

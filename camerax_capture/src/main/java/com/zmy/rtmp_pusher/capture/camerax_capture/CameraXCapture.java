@@ -11,6 +11,7 @@ import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.graphics.YuvImage;
 import android.opengl.GLSurfaceView;
+import android.os.Build;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
@@ -19,6 +20,7 @@ import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
@@ -88,9 +90,11 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private Camera camera;
     private Surface surfaceRender;
     private ProcessCameraProvider cameraProvider;
+    private GLCameraView glCameraView;
+    private Preview preview ;
 
 
-    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, TextureView textureView , GPUImageView gpuImageView, Ilistener listener) {
+    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, TextureView textureView , GPUImageView gpuImageView, Ilistener listener , GLCameraView glCameraView) {
         super();
         this.context = context;
         this.lifecycleOwner = lifecycleOwner;
@@ -100,25 +104,20 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         this.height = height;
         this.gpuImageView = gpuImageView;
         this.listener = listener;
+        this.glCameraView = glCameraView;
 
 
-        cgeFrameRecorder = new CGEFrameRecorder();
-        cameraProviderFuture = ProcessCameraProvider.getInstance(context);
-        cameraProviderFuture.addListener(new Runnable() {
-           @Override
-           public void run() {
-
-           }
-       },ContextCompat.getMainExecutor(context));
+        this.preview = new Preview.Builder()
+                .setTargetResolution(getRotatedResolution(width, height))
+                .build();
+        this.preview.setSurfaceProvider(this::onSurfaceRequested);
 
         //itit CEG
-        mTextureID = Common.genSurfaceTextureID();
-        surfaceTextureRender = new SurfaceTexture(mTextureID);
-        textureView.setSurfaceTexture(surfaceTextureRender);
+      /*cgeFrameRecorder = new CGEFrameRecorder();
         cgeFrameRecorder.init(1080, 1920, 1080, 1920);
         cgeFrameRecorder.setSrcRotation((float) (Math.PI / 2.0));
         cgeFrameRecorder.setSrcFlipScale(1.0f, -1.0f);
-        cgeFrameRecorder.setRenderFlipScale(1.0f, -1.0f);
+        cgeFrameRecorder.setRenderFlipScale(1.0f, -1.0f);*/
     }
 
     private void setFilter(GPUImageFilter filter){
@@ -137,6 +136,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         cgeFrameRecorder.setFilterWidthConfig(config);
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void doInitialize() {
         try {
@@ -153,34 +153,38 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
             imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
                 @Override
                 public void analyze(@NonNull ImageProxy image) {
-                    Log.d("HopLog", image.toString());
                     try {
                         byte[] data = ImageUtil.imageToJpegByteArray(image);
 
 
-                        cgeFrameRecorder.update(mTextureID, mTransformMatrix);
+                      /*  cgeFrameRecorder.update(mTextureID, mTransformMatrix);
                         cgeFrameRecorder.runProc();
-                        cgeFrameRecorder.render(1080,1920,1080,1920);
+                        cgeFrameRecorder.render(1080,1920,1080,1920);*/
 
                         //
                     } catch (ImageUtil.CodecFailedException e) {
                         e.printStackTrace();
                     }
-
                     image.close();
-
-
                 }
             });
 
-            cameraProvider = cameraProviderFuture.get();
-            Preview preview = new Preview.Builder().build();
-            preview.setSurfaceProvider(executor,this::onSurfaceRequested);
-
-            SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
-
-            cameraProvider.unbindAll();
-            camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis );
+            cameraProviderFuture = ProcessCameraProvider.getInstance(context);
+            cameraProviderFuture.addListener(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        cameraProvider = cameraProviderFuture.get();
+                    } catch (ExecutionException e) {
+                        e.printStackTrace();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    glCameraView.attachPreview(encodeCase);
+                    cameraProvider.unbindAll();
+                    camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, getEncodeCase());
+                }
+            },ContextCompat.getMainExecutor(context));
 
         } catch (Exception e) {
             if (callback != null) callback.onVideoCaptureInit(this, e);
@@ -238,8 +242,8 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
 
     @Override
     public void start(Surface surface, EOFHandle handle) {
-        request.provideSurface(new Surface(surfaceTextureRender), ContextCompat.getMainExecutor(context), this);
-        this.eofHandle = handle;
+     /*   request.provideSurface(new Surface(surfaceTextureRender), ContextCompat.getMainExecutor(context), this);
+        this.eofHandle = handle;*/
     }
 
     @Override
@@ -256,6 +260,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
 
     @Override
     public void onSurfaceRequested(@NonNull SurfaceRequest request) {
+        Log.d("HopLog", "onSurfaceRequested");
         outputWidth = request.getResolution().getWidth();
         outputHeight = request.getResolution().getHeight();
         request.getCamera().getCameraState().removeObserver(this);

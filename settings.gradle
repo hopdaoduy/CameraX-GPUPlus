@@ -9,3 +9,4 @@ rootProject.name = "rtmp_pusher"
 include ':app'
 include ':pusher'
 include ':camerax_capture'
+include ':library'

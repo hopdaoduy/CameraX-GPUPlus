@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity(), RtmpCallback {
 
     private val videoCapture: VideoCapture by lazy {
       /*  CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA, Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) },gpuImageView)*/
-        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA,null ,gpuImageView , null)
+        CameraXCapture(applicationContext, this, 1920, 1080, CameraSelector.DEFAULT_FRONT_CAMERA,null ,gpuImageView , null ,null)
     }
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) {

@@ -7,8 +7,8 @@
     tools:context=".MainActivity"
     tools:ignore="MissingDefaultResource">
 
-    <TextureView
-        android:id="@+id/preview_view"
+    <com.zmy.rtmp_pusher.capture.camerax_capture.GLCameraView
+        android:id="@+id/glCameraView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
