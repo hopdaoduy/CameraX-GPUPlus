@@ -22,10 +22,14 @@ import androidx.camera.core.impl.CameraInternal;
 import androidx.camera.core.impl.Observable;
 import androidx.core.util.Consumer;
 
+import com.zmy.rtmp_pusher.capture.camerax_capture.gles.FullFrameRect;
+import com.zmy.rtmp_pusher.capture.camerax_capture.gles.Texture2dProgram;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -35,20 +39,27 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener, Preview.SurfaceProvider{
     private static final String LOG_TAG = "OpenGLCameraX";
+    private Texture2dProgram.ProgramType mEffectType = Texture2dProgram.ProgramType.ORIGIN;
+    private Texture2dProgram program;
+    private final float[] mSTMatrix = new float[16];
+    private DirectVideo directVideo;
 
     private static final String FRAGMENT_SHADER_2D =
             "#extension GL_OES_EGL_image_external : require\n" +
                     "precision mediump float;\n" +
                     "varying vec2 vTextureCoord;\n" +
                     "uniform samplerExternalOES sTexture;\n" +
+                    "uniform vec2 uPosition;\n" +
                     "void main() {\n" +
-                    "    vec4 tc = texture2D(sTexture, vTextureCoord);\n" +
-                    "    float color = ((tc.r * 0.3 + tc.g * 0.59 + tc.b * 0.11) - 0.5 * 1.5) + 0.8;\n" +
-                    "    if(tc.g > 0.6 && tc.b < 0.6 && tc.r < 0.6){ \n" +
-                    "        gl_FragColor = vec4(0, 0, 0, 0.0);\n" +
-                    "    }else{ \n" +
-                    "        gl_FragColor = texture2D(sTexture, vTextureCoord);\n" +
-                    "    }\n" +
+                    "    vec2 texCoord = vTextureCoord.xy;\n" +
+                    "    vec2 normCoord = 2.0 * texCoord - 1.0;\n"+
+                    "    float r = length(normCoord); // to polar coords \n" +
+                    "    float phi = atan(normCoord.y + uPosition.y, normCoord.x + uPosition.x); // to polar coords \n"+
+                    "    if (r > 0.5) r = 0.5;\n"+ // Tunnel
+                    "    normCoord.x = r * cos(phi); \n" +
+                    "    normCoord.y = r * sin(phi); \n" +
+                    "    texCoord = normCoord / 2.0 + 0.5;\n"+
+                    "    gl_FragColor = texture2D(sTexture, texCoord);\n"+
                     "}\n";
 
     private static final String VERTEX_SHADER =
@@ -68,19 +79,27 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
 
     private int textureId;
     private SurfaceTexture surfaceTexture;
+    private Surface surface;
 
     private int vPosition;
     private int vCoord;
     private int programId;
 
+    private Preview preview;
     private int textureMatrixId;
     private float[] textureMatrix = new float[16];
 
     protected FloatBuffer mGLVertexBuffer;
     protected FloatBuffer mGLTextureBuffer;
+    private FullFrameRect mFullScreen;
 
     public GLCameraView(Context context) {
         this(context, null);
+
+        preview = new Preview.Builder()
+                .setTargetResolution(new Size(1080,1920))
+                .build();
+        preview.setSurfaceProvider(executor,this);
     }
 
     public GLCameraView(Context context, AttributeSet attrs) {
@@ -92,10 +111,9 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
         setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
     }
 
-
     @SuppressLint("UnsafeExperimentalUsageError")
     public void attachPreview(Preview preview) {
-        Log.d(LOG_TAG, "attachPreview");
+        Log.d("HopLog", "attachPreview");
 
 /*        preview.setSurfaceProvider(new Preview.SurfaceProvider() {
             @Override
@@ -112,14 +130,28 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
                 });
             }`
         });*/
-        if (preview!= null) {
-            preview.setSurfaceProvider(this::onSurfaceRequested);
-        }
+
+        preview.setSurfaceProvider(this::onSurfaceRequested);
     }
 
     @Override
     public void onSurfaceRequested(@NonNull SurfaceRequest request) {
-        Log.v(LOG_TAG, "onSurfaceRequested");
+        Log.v("HopLog", "SuccessOnRequest");
+        Surface surface = new Surface(surfaceTexture);
+        request.provideSurface(surface, executor, new Consumer<SurfaceRequest.Result>() {
+            @Override
+            public void accept(SurfaceRequest.Result result) {
+                surface.release();
+                surfaceTexture.release();
+                Log.v("HopLog", "--accept------");
+            }
+        });
+    }
+
+
+    public void doWithSurfaceRequest(SurfaceRequest request){
+        Log.d("HopLog", "doWithSurfaceRequest");
+        surfaceTexture.setOnFrameAvailableListener(this::onFrameAvailable);
         Surface surface = new Surface(surfaceTexture);
         request.provideSurface(surface, executor, new Consumer<SurfaceRequest.Result>() {
             @Override
@@ -131,11 +163,26 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
         });
     }
 
+    public Preview getPreview(){
+        if (preview == null){
+            preview = new Preview.Builder()
+                    .setTargetResolution(new Size(1080,1920))
+                    .build();
+            preview.setSurfaceProvider(this::onSurfaceRequested);
+        }
+        return preview;
+    }
+
+    public Surface getSurface(){
+        if (surface == null){
+            surface = new Surface(surfaceTexture);
+        }
+        return surface;
+    }
 
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
-        Log.d(LOG_TAG, "onSurfaceCreated");
-        int[] ids = new int[1];
+/*        int[] ids = new int[1];
 
         // OpenGL相关
         GLES20.glGenTextures(1, ids, 0);
@@ -143,8 +190,12 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
         surfaceTexture = new SurfaceTexture(textureId);
         surfaceTexture.setOnFrameAvailableListener(this::onFrameAvailable);
 
-       /* String vertexShader = OpenGLUtils.readRawTextFile(getContext(), R.raw.camera_vertex);
-        String fragmentShader = OpenGLUtils.readRawTextFile(getContext(), R.raw.camera_frag);*/
+        //init surface to render CameraX buffer
+        surface = new Surface(surfaceTexture);
+
+
+       *//* String vertexShader = OpenGLUtils.readRawTextFile(getContext(), R.raw.camera_vertex);
+        String fragmentShader = OpenGLUtils.readRawTextFile(getContext(), R.raw.camera_frag);*//*
         programId = OpenGLUtils.loadProgram(VERTEX_SHADER, FRAGMENT_SHADER_2D);
 
         vPosition = GLES20.glGetAttribLocation(programId, "vPosition");
@@ -185,7 +236,16 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
                 0.0f, 1.0f,
                 1.0f, 1.0f
         };
-        mGLTextureBuffer.put(TEXTURE);
+        mGLTextureBuffer.put(TEXTURE);*/
+
+
+
+
+
+        program = new Texture2dProgram(mEffectType);
+        mFullScreen = new FullFrameRect(program);
+        textureId = mFullScreen.createTextureObject();
+        surfaceTexture = new SurfaceTexture(textureId);
     }
 
     @Override
@@ -195,8 +255,9 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
 
     @Override
     public void onDrawFrame(GL10 gl) {
+        Log.d("HopLog", "onDrawFrame");
 
-        // 清屏
+      /*  // 清屏
         GLES20.glClearColor(1, 0, 0, 0);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
@@ -224,7 +285,12 @@ public class GLCameraView extends GLSurfaceView implements GLSurfaceView.Rendere
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         // 解绑纹理
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);*/
+
+        GLES20.glFinish();
+        surfaceTexture.updateTexImage();
+        surfaceTexture.getTransformMatrix(mSTMatrix);
+        mFullScreen.drawFrame(textureId,mSTMatrix,1080,1920,1080,1920);
     }
 
     @Override

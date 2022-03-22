@@ -57,6 +57,7 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
     private LinearLayout linearLayout;
     private CameraXCapture videoCapture;
     private String mCurrentConfig;
+    private PreviewView previewView;
 
     private MicAudioCapture audioCapture;
     private RtmpPusher rtmpPusher;
@@ -105,7 +106,10 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
         if (!isPermissionGranted()){
             requestPermission();
         } else {
-            videoCapture = new CameraXCapture(this.getApplicationContext(), this , 1920 ,1080, CameraSelector.DEFAULT_FRONT_CAMERA, null , gpuImageView,this, glCameraView);
+            Preview preview = new Preview.Builder().build();
+            preview.setSurfaceProvider(previewView.getSurfaceProvider());
+
+            videoCapture = new CameraXCapture(this.getApplicationContext(), this , 1920 ,1080, CameraSelector.DEFAULT_FRONT_CAMERA, preview , gpuImageView,this, glCameraView);
             audioCapture = new MicAudioCapture(AudioFormat.ENCODING_PCM_16BIT, 44100, AudioFormat.CHANNEL_IN_STEREO);
 
 
@@ -145,6 +149,7 @@ public class CameraDemo extends AppCompatActivity implements RtmpCallback , View
     }
 
     private void initView(){
+        previewView =  findViewById(R.id.preview_test);
         imageView = findViewById(R.id.preview_image);
         glCameraView = findViewById(R.id.glCameraView);
         linearLayout = findViewById(R.id.layout_menu_filter);

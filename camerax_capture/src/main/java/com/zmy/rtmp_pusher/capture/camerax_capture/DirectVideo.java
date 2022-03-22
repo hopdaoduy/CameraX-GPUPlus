@@ -10,7 +10,7 @@ import java.nio.ShortBuffer;
 
 public class DirectVideo
 {
-   /* private final String vertexShaderCode =
+    private final String vertexShaderCode =
             "attribute vec4 vPosition;" +
             "attribute vec2 inputTextureCoordinate;" +
             "varying vec2 textureCoordinate;" +
@@ -58,7 +58,7 @@ public class DirectVideo
 
     private int texture;
 
-    public DirectVideo(int texture)
+    public DirectVideo(int texture, int vertexShader, int fragmentShader)
     {
         this.texture = texture;
 
@@ -81,9 +81,9 @@ public class DirectVideo
         textureVerticesBuffer = bb2.asFloatBuffer();
         textureVerticesBuffer.put(textureVertices);
         textureVerticesBuffer.position(0);
-
+/*
         int vertexShader    = MyGLSurfaceView.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
-        int fragmentShader  = MyGLSurfaceView.loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
+        int fragmentShader  = MyGLSurfaceView.loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);*/
 
         mProgram = GLES20.glCreateProgram();             // create empty OpenGL ES Program
         GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
@@ -116,5 +116,5 @@ public class DirectVideo
         // Disable vertex array
         GLES20.glDisableVertexAttribArray(mPositionHandle);
         GLES20.glDisableVertexAttribArray(mTextureCoordHandle);
-    }*/
+    }
 }

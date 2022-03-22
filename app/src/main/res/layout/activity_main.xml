@@ -12,10 +12,10 @@
         android:layout_height="match_parent" />
 
     <ImageView
+        android:id="@+id/preview_image"
         android:layout_width="120dp"
         android:layout_height="200dp"
-        android:id="@+id/preview_image"
-        android:layout_alignParentRight="true"/>
+        android:layout_alignParentRight="true" />
 
 
     <jp.co.cyberagent.android.gpuimage.GPUImageView

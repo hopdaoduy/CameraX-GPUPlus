@@ -10,6 +10,7 @@ import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.graphics.YuvImage;
+import android.media.ImageReader;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.util.Log;
@@ -76,7 +77,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
 
     private final CameraSelector cameraSelector;
     private Ilistener listener;
-    private final TextureView textureView;
+    private  Preview preview, secondPreview;
     private final LifecycleOwner lifecycleOwner;
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
     private Preview encodeCase;
@@ -91,15 +92,15 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
     private Surface surfaceRender;
     private ProcessCameraProvider cameraProvider;
     private GLCameraView glCameraView;
-    private Preview preview ;
+    private ImageReader imageReader;
 
 
-    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, TextureView textureView , GPUImageView gpuImageView, Ilistener listener , GLCameraView glCameraView) {
+    public CameraXCapture(Context context, LifecycleOwner lifecycleOwner, int width, int height, CameraSelector cameraSelector, Preview preview , GPUImageView gpuImageView, Ilistener listener , GLCameraView glCameraView) {
         super();
         this.context = context;
         this.lifecycleOwner = lifecycleOwner;
         this.cameraSelector = cameraSelector;
-        this.textureView = textureView;
+        this.preview = preview;
         this.width = width;
         this.height = height;
         this.gpuImageView = gpuImageView;
@@ -107,10 +108,11 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         this.glCameraView = glCameraView;
 
 
-        this.preview = new Preview.Builder()
-                .setTargetResolution(getRotatedResolution(width, height))
+        secondPreview = new Preview.Builder()
+                .setTargetResolution(getRotatedResolution(this.width,this.height))
                 .build();
-        this.preview.setSurfaceProvider(this::onSurfaceRequested);
+        secondPreview.setSurfaceProvider(this);
+       // this.preview.setSurfaceProvider(this::onSurfaceRequested);
 
         //itit CEG
       /*cgeFrameRecorder = new CGEFrameRecorder();
@@ -180,9 +182,12 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    glCameraView.attachPreview(encodeCase);
                     cameraProvider.unbindAll();
-                    camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, getEncodeCase());
+
+                    camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, getEncodeCase(), preview);
+                  //  glCameraView.attachPreview(preview);
+
+
                 }
             },ContextCompat.getMainExecutor(context));
 
@@ -240,24 +245,31 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         return outputHeight;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void start(Surface surface, EOFHandle handle) {
-     /*   request.provideSurface(new Surface(surfaceTextureRender), ContextCompat.getMainExecutor(context), this);
+     /*   request.provideSurface(surface, ContextCompat.getMainExecutor(context), this);
         this.eofHandle = handle;*/
+
+        request.provideSurface(surface, ContextCompat.getMainExecutor(context), this);
+
     }
 
     @Override
     public void accept(SurfaceRequest.Result result) {
-
+        Log.d("HopLog", "onAccept");
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     private UseCase getEncodeCase() {
         if (encodeCase == null) {
-            encodeCase = createUseCase(this);
+            Log.d("HopLog", "getEncodeCase");
+            encodeCase = createUseCase(this::onSurfaceRequested);
         }
         return encodeCase;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void onSurfaceRequested(@NonNull SurfaceRequest request) {
         Log.d("HopLog", "onSurfaceRequested");
@@ -271,6 +283,8 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
             setReady(true);
             callback.onVideoCaptureInit(this, null);
         }
+
+        //glCameraView.doWithSurfaceRequest(request);
     }
 
     @Override
@@ -283,7 +297,7 @@ public class CameraXCapture extends VideoCapture implements Preview.SurfaceProvi
         if (callback != null) callback.onVideoCaptureError(new Exception(t));
     }
 
-    private Preview createUseCase(Preview.SurfaceProvider provider) {
+    private Preview  createUseCase(Preview.SurfaceProvider provider) {
         Preview useCase = new Preview.Builder()
                 .setTargetResolution(getRotatedResolution(width, height))
                 .build();
